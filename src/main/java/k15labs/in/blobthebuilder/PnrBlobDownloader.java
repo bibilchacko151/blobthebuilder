@@ -14,9 +14,12 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class PnrBlobDownloader {
     private static final String ROOT_PREFIX = "invision_sbr_audit";
+    private static final Logger LOGGER = Logger.getLogger(PnrBlobDownloader.class.getName());
 
     private final LocalPathResolver localPathResolver;
 
@@ -33,18 +36,18 @@ public final class PnrBlobDownloader {
 
         Path baseOutputDirectory = outputDirectory.toAbsolutePath().normalize();
         try {
-            Files.createDirectories(baseOutputDirectory);
+            localPathResolver.ensureDirectoryTree(baseOutputDirectory, baseOutputDirectory);
         } catch (IOException e) {
             throw new IllegalArgumentException("Invalid local output directory: " + baseOutputDirectory, e);
         }
         String prefix = ROOT_PREFIX + "/" + pnr + "/";
 
-        System.out.println("Environment       : " + environment);
-        System.out.println("Storage Account   : " + config.storageAccount());
-        System.out.println("Container         : " + config.container());
-        System.out.println("PNR               : " + pnr);
-        System.out.println("Blob Prefix       : " + prefix);
-        System.out.println("Output Directory  : " + baseOutputDirectory);
+        LOGGER.info(() -> "Environment       : " + environment);
+        LOGGER.info(() -> "Storage Account   : " + config.storageAccount());
+        LOGGER.info(() -> "Container         : " + config.container());
+        LOGGER.info(() -> "PNR               : " + pnr);
+        LOGGER.info(() -> "Blob Prefix       : " + prefix);
+        LOGGER.info(() -> "Output Directory  : " + baseOutputDirectory);
 
         BlobServiceClient blobServiceClient = buildBlobServiceClient(config.storageAccount());
         BlobContainerClient containerClient = blobServiceClient.getBlobContainerClient(config.container());
@@ -59,31 +62,31 @@ public final class PnrBlobDownloader {
             if (blobName == null || blobName.isBlank() || blobName.endsWith("/")) {
                 continue;
             }
+            Path destination = null;
             try {
-                Path destination = localPathResolver.buildLocalPath(baseOutputDirectory, blobName);
-                downloadBlob(containerClient.getBlobClient(blobName), destination, blobName);
+                destination = localPathResolver.buildLocalPath(baseOutputDirectory, blobName);
+                downloadBlob(containerClient.getBlobClient(blobName), baseOutputDirectory, destination, blobName);
                 successCount++;
             } catch (Exception e) {
                 failureCount++;
-                System.err.println("Failed to download blob: " + blobName);
-                System.err.println("Reason: " + e.getMessage());
+                logFailure(blobName, destination != null ? destination : baseOutputDirectory, e);
             }
         }
 
         if (!foundAny) {
-            System.out.println("No blobs found for PNR: " + pnr);
+            LOGGER.info(() -> "No blobs found for PNR: " + pnr);
             return 0;
         }
 
         Path completedOutput = baseOutputDirectory.resolve(ROOT_PREFIX).resolve(pnr).normalize();
-        System.out.println();
-        System.out.println("Download completed");
-        System.out.println();
-        System.out.println("Environment                  : " + environment);
-        System.out.println("PNR                          : " + pnr);
-        System.out.println("Files downloaded successfully: " + successCount);
-        System.out.println("Files failed                 : " + failureCount);
-        System.out.println("Output directory             : " + completedOutput);
+        LOGGER.info("");
+        LOGGER.info("Download completed");
+        LOGGER.info("");
+        LOGGER.info(() -> "Environment                  : " + environment);
+        LOGGER.info(() -> "PNR                          : " + pnr);
+        LOGGER.info("Files downloaded successfully: " + successCount);
+        LOGGER.info("Files failed                 : " + failureCount);
+        LOGGER.info(() -> "Output directory             : " + completedOutput);
 
         return failureCount > 0 ? 1 : 0;
     }
@@ -96,11 +99,14 @@ public final class PnrBlobDownloader {
             .buildClient();
     }
 
-    void downloadBlob(BlobClient blobClient, Path destination, String blobName) throws IOException {
-        System.out.println("Downloading:");
-        System.out.println(blobName);
-        System.out.println("-> " + destination);
-        Files.createDirectories(destination.getParent());
+    void downloadBlob(BlobClient blobClient, Path baseOutputDirectory, Path destination, String blobName) throws IOException {
+        LOGGER.info("Downloading:");
+        LOGGER.info(blobName);
+        LOGGER.info(() -> "-> " + destination);
+        Path parent = destination.getParent();
+        if (parent != null) {
+            localPathResolver.ensureDirectoryTree(baseOutputDirectory, parent);
+        }
         try (OutputStream outputStream = Files.newOutputStream(
             destination,
             StandardOpenOption.CREATE,
@@ -111,10 +117,19 @@ public final class PnrBlobDownloader {
         }
     }
 
+    private void logFailure(String blobName, Path destination, Exception exception) {
+        LOGGER.severe("Failed to download blob : " + blobName);
+        LOGGER.severe("Destination             : " + destination);
+        LOGGER.severe("Exception                : " + exception.getClass().getName());
+        LOGGER.severe("Reason                   : " + exception.getMessage());
+        if (exception instanceof IOException && exception.getMessage() != null && exception.getMessage().startsWith("File/directory collision:")) {
+            LOGGER.severe("Collision                : " + exception.getMessage());
+        }
+    }
+
     private void validateOutputDirectory(Path outputDirectory) {
         if (outputDirectory == null) {
             throw new IllegalArgumentException("Invalid output directory: null");
         }
     }
 }
-

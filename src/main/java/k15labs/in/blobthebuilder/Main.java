@@ -1,8 +1,12 @@
 package k15labs.in.blobthebuilder;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.nio.file.Path;
 
 public final class Main {
+    private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
+
     private Main() {
     }
 
@@ -22,13 +26,11 @@ public final class Main {
             );
             System.exit(exitCode);
         } catch (IllegalArgumentException | IllegalStateException e) {
-            System.err.println(e.getMessage());
+            LOGGER.log(Level.SEVERE, e.getMessage(), e);
             System.exit(1);
         } catch (Exception e) {
-            System.err.println("Unexpected error: " + e.getMessage());
-            e.printStackTrace(System.err);
+            LOGGER.log(Level.SEVERE, "Unexpected error: " + e.getMessage(), e);
             System.exit(1);
         }
     }
 }
-

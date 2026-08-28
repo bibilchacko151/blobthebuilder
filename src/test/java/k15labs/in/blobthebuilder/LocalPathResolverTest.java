@@ -2,9 +2,13 @@ package k15labs.in.blobthebuilder;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,5 +81,92 @@ class LocalPathResolverTest {
         assertTrue(destination.toString().contains("ABC123"));
         assertTrue(destination.toString().contains("response.json"));
     }
-}
 
+    @Test
+    void createsFullDirectoryTreeWhenNestedDirectoriesDoNotExist() throws IOException {
+        Path base = Files.createTempDirectory("blob-downloader-base");
+        Path target = base
+            .resolve("invisio-sbr-audit")
+            .resolve("2LSNQF")
+            .resolve("99")
+            .resolve("2026-04-27_20260427012921");
+
+        resolver.ensureDirectoryTree(base, target);
+
+        assertTrue(Files.isDirectory(target));
+        assertTrue(Files.isDirectory(target.getParent()));
+    }
+
+    @Test
+    void succeedsWhenAllRequiredDirectoriesAlreadyExist() throws IOException {
+        Path base = Files.createTempDirectory("blob-downloader-base");
+        Path target = base
+            .resolve("invisio-sbr-audit")
+            .resolve("2LSNQF")
+            .resolve("99")
+            .resolve("2026-04-27_20260427012921");
+        Files.createDirectories(target);
+
+        assertDoesNotThrow(() -> resolver.ensureDirectoryTree(base, target));
+        assertTrue(Files.isDirectory(target));
+    }
+
+    @Test
+    void rejectsIntermediateFileCollision() throws IOException {
+        Path base = Files.createTempDirectory("blob-downloader-base");
+        Path collidingFile = base
+            .resolve("invisio-sbr-audit")
+            .resolve("2LSNQF")
+            .resolve("99");
+        Files.createDirectories(collidingFile.getParent());
+        Files.createFile(collidingFile);
+
+        Path target = base
+            .resolve("invisio-sbr-audit")
+            .resolve("2LSNQF")
+            .resolve("99")
+            .resolve("2026-04-27_20260427012921");
+
+        IOException exception = assertThrows(IOException.class, () -> resolver.ensureDirectoryTree(base, target));
+        assertTrue(exception.getMessage().contains("File/directory collision"));
+        assertTrue(exception.getMessage().contains(collidingFile.toString()));
+    }
+
+    @Test
+    void createsNestedDirectoriesAcrossMultipleLevels() throws IOException {
+        Path base = Files.createTempDirectory("blob-downloader-base");
+        Path target = base
+            .resolve("alpha")
+            .resolve("bravo")
+            .resolve("charlie")
+            .resolve("delta")
+            .resolve("echo");
+
+        resolver.ensureDirectoryTree(base, target);
+
+        assertTrue(Files.isDirectory(target));
+        assertTrue(Files.isDirectory(target.getParent()));
+        assertTrue(Files.isDirectory(target.getParent().getParent()));
+    }
+
+    @Test
+    void rejectsPathTraversalForDirectoryCreation() throws IOException {
+        Path base = Files.createTempDirectory("blob-downloader-base");
+        Path outside = base.getParent().resolve("outside");
+
+        SecurityException exception = assertThrows(SecurityException.class, () ->
+            resolver.ensureDirectoryTree(base, outside)
+        );
+        assertTrue(exception.getMessage().contains("outside the output directory"));
+    }
+
+    @Test
+    void usesPortablePathResolutionWithoutHardCodedSeparators() {
+        Path output = Path.of("downloads");
+        Path destination = resolver.buildLocalPath(output, Path.of("invisio-sbr-audit", "2LSNQF", "99", "metadata.json").toString());
+
+        assertFalse(destination.toString().contains("//"));
+        assertTrue(destination.toString().contains("invisio-sbr-audit"));
+        assertTrue(destination.toString().contains("metadata.json"));
+    }
+}
