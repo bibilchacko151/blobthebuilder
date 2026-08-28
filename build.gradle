@@ -24,6 +24,7 @@ application {
 dependencies {
     implementation 'com.azure:azure-storage-blob:12.30.0'
     implementation 'com.azure:azure-identity:1.18.5'
+    runtimeOnly 'org.slf4j:slf4j-simple:1.7.36'
 
     testImplementation platform('org.junit:junit-bom:5.10.3')
     testImplementation 'org.junit.jupiter:junit-jupiter'

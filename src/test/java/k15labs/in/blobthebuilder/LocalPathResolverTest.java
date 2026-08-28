@@ -169,4 +169,46 @@ class LocalPathResolverTest {
         assertTrue(destination.toString().contains("invisio-sbr-audit"));
         assertTrue(destination.toString().contains("metadata.json"));
     }
+
+    @Test
+    void replacesStaleZeroByteMarkerFileWithDirectory() throws IOException {
+        Path base = Files.createTempDirectory("blob-downloader-base");
+        Path marker = base.resolve("root").resolve("PNR").resolve("99");
+        Files.createDirectories(marker.getParent());
+        Files.createFile(marker);
+
+        boolean replaced = resolver.ensureMarkerDirectory(base, marker, true);
+
+        assertTrue(replaced);
+        assertTrue(Files.isDirectory(marker));
+    }
+
+    @Test
+    void protectsNonZeroFileWhenDirectoryIsRequired() throws IOException {
+        Path base = Files.createTempDirectory("blob-downloader-base");
+        Path file = base.resolve("root").resolve("PNR").resolve("99");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "genuine local data");
+
+        IOException exception = assertThrows(IOException.class, () -> resolver.ensureMarkerDirectory(base, file, true));
+
+        assertTrue(exception.getMessage().contains("File/directory collision"));
+        assertEquals("genuine local data", Files.readString(file));
+    }
+
+    @Test
+    void resolvesTrailingSlashMarkerAsDirectory() {
+        Path base = Path.of("downloads");
+
+        Path marker = resolver.buildLocalDirectoryPath(base, "root/PNR/folder/");
+
+        assertEquals(base.toAbsolutePath().normalize().resolve("root").resolve("PNR").resolve("folder"), marker);
+    }
+
+    @Test
+    void rejectsPathTraversalInDirectoryMarker() {
+        assertThrows(SecurityException.class, () ->
+            resolver.buildLocalDirectoryPath(Path.of("downloads"), "root/PNR/../outside/")
+        );
+    }
 }
